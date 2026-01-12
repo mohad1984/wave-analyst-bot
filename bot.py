@@ -2,9 +2,11 @@
 بوت التحليل الفني المتقدم
 Advanced Technical Analysis Telegram Bot
 موجات إليوت - التحليل الكلاسيكي - التحليل التوافقي - مدرسة ICT
+مع نظام طلبات الوصول
 """
 
 import os
+import json
 import logging
 from datetime import datetime
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
@@ -22,16 +24,52 @@ from ict_analysis import ICTAnalyzer
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# الفريمات الزمنية
+# ============================================
+# إعدادات الصلاحيات
+# ============================================
+
+# المشرف الرئيسي (أنت)
+ADMIN_ID = 1177923997
+
+# ملف تخزين المستخدمين المعتمدين
+APPROVED_USERS_FILE = "approved_users.json"
+
+def load_approved_users():
+    """تحميل قائمة المستخدمين المعتمدين"""
+    try:
+        if os.path.exists(APPROVED_USERS_FILE):
+            with open(APPROVED_USERS_FILE, 'r') as f:
+                return set(json.load(f))
+    except:
+        pass
+    return {ADMIN_ID}  # المشرف دائماً معتمد
+
+def save_approved_users(users):
+    """حفظ قائمة المستخدمين المعتمدين"""
+    try:
+        with open(APPROVED_USERS_FILE, 'w') as f:
+            json.dump(list(users), f)
+    except Exception as e:
+        logger.error(f"Error saving users: {e}")
+
+# المستخدمين المعتمدين
+approved_users = load_approved_users()
+
+# طلبات الوصول المعلقة
+pending_requests = {}
+
+# ============================================
+# الفريمات الزمنية وأنواع التحليل
+# ============================================
+
 TIMEFRAMES = {
     '15m': {'interval': '15m', 'period': '5d', 'name': '15 دقيقة'},
     '30m': {'interval': '30m', 'period': '10d', 'name': '30 دقيقة'},
     '1h': {'interval': '1h', 'period': '1mo', 'name': '1 ساعة'},
-    '4h': {'interval': '1h', 'period': '3mo', 'name': '4 ساعات'},  # سنجمع البيانات
+    '4h': {'interval': '1h', 'period': '3mo', 'name': '4 ساعات'},
     '1d': {'interval': '1d', 'period': '6mo', 'name': 'يومي'},
 }
 
-# أنواع التحليل
 ANALYSIS_TYPES = {
     'elliott': {'name': '🌊 موجات إليوت', 'analyzer': ElliottWaveAnalyzer},
     'classic': {'name': '📊 التحليل الكلاسيكي', 'analyzer': ClassicAnalyzer},
@@ -40,20 +78,31 @@ ANALYSIS_TYPES = {
     'full': {'name': '📋 تحليل شامل', 'analyzer': None},
 }
 
-# تخزين حالة المستخدم
 user_states = {}
 
+# ============================================
+# دوال التحقق من الصلاحيات
+# ============================================
+
+def is_approved(user_id: int) -> bool:
+    """التحقق من أن المستخدم معتمد"""
+    return user_id in approved_users or user_id == ADMIN_ID
+
+def is_admin(user_id: int) -> bool:
+    """التحقق من أن المستخدم مشرف"""
+    return user_id == ADMIN_ID
+
+# ============================================
+# دوال جلب البيانات
+# ============================================
+
 def get_stock_data(symbol: str, timeframe: str) -> pd.DataFrame:
-    """
-    جلب بيانات السهم
-    """
+    """جلب بيانات السهم"""
     try:
         tf_config = TIMEFRAMES.get(timeframe, TIMEFRAMES['1d'])
-        
         stock = yf.Ticker(symbol)
         
         if timeframe == '4h':
-            # جلب بيانات الساعة وتجميعها لـ 4 ساعات
             df = stock.history(period='3mo', interval='1h')
             if not df.empty:
                 df = df.resample('4h').agg({
@@ -72,9 +121,7 @@ def get_stock_data(symbol: str, timeframe: str) -> pd.DataFrame:
         return pd.DataFrame()
 
 def get_stock_info(symbol: str) -> dict:
-    """
-    جلب معلومات السهم
-    """
+    """جلب معلومات السهم"""
     try:
         stock = yf.Ticker(symbol)
         info = stock.info
@@ -88,10 +135,65 @@ def get_stock_info(symbol: str) -> dict:
     except:
         return {'name': symbol, 'price': 0, 'change': 0, 'volume': 0, 'market_cap': 0}
 
+# ============================================
+# أوامر البوت
+# ============================================
+
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """
-    أمر البدء
-    """
+    """أمر البدء"""
+    user_id = update.effective_user.id
+    user_name = update.effective_user.full_name
+    username = update.effective_user.username or "بدون يوزر"
+    
+    # التحقق من الصلاحية
+    if not is_approved(user_id):
+        # إرسال طلب وصول
+        if user_id not in pending_requests:
+            pending_requests[user_id] = {
+                'name': user_name,
+                'username': username,
+                'time': datetime.now().strftime('%Y-%m-%d %H:%M')
+            }
+            
+            # إرسال إشعار للمشرف
+            keyboard = [
+                [
+                    InlineKeyboardButton("✅ موافقة", callback_data=f"approve_{user_id}"),
+                    InlineKeyboardButton("❌ رفض", callback_data=f"reject_{user_id}")
+                ]
+            ]
+            
+            try:
+                await context.bot.send_message(
+                    chat_id=ADMIN_ID,
+                    text=(
+                        "🔔 **طلب وصول جديد**\n\n"
+                        f"👤 الاسم: {user_name}\n"
+                        f"🆔 اليوزر: @{username}\n"
+                        f"🔢 ID: `{user_id}`\n"
+                        f"⏰ الوقت: {pending_requests[user_id]['time']}"
+                    ),
+                    reply_markup=InlineKeyboardMarkup(keyboard),
+                    parse_mode='Markdown'
+                )
+            except Exception as e:
+                logger.error(f"Error sending to admin: {e}")
+            
+            await update.message.reply_text(
+                "🔒 **البوت خاص**\n\n"
+                "تم إرسال طلب وصول للمشرف.\n"
+                "سيتم إعلامك عند الموافقة على طلبك.\n\n"
+                "⏳ انتظر الموافقة..."
+            )
+        else:
+            await update.message.reply_text(
+                "⏳ **طلبك قيد المراجعة**\n\n"
+                "تم إرسال طلبك مسبقاً.\n"
+                "انتظر موافقة المشرف."
+            )
+        return
+    
+    # المستخدم معتمد - عرض القائمة الرئيسية
     text = (
         "🤖 **بوت التحليل الفني المتقدم**\n\n"
         "أرسل **رمز السهم** للحصول على تحليل شامل\n\n"
@@ -114,17 +216,172 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     await update.message.reply_text(text, parse_mode='Markdown')
 
-async def handle_symbol(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """
-    معالجة رمز السهم المدخل
-    """
-    symbol = update.message.text.strip().upper()
+async def admin_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """أوامر المشرف"""
     user_id = update.effective_user.id
     
-    # التحقق من صحة الرمز
+    if not is_admin(user_id):
+        await update.message.reply_text("❌ هذا الأمر للمشرف فقط.")
+        return
+    
+    text = (
+        "👑 **لوحة تحكم المشرف**\n\n"
+        f"👥 المستخدمين المعتمدين: {len(approved_users)}\n"
+        f"⏳ الطلبات المعلقة: {len(pending_requests)}\n\n"
+        "**الأوامر:**\n"
+        "/users - عرض المستخدمين المعتمدين\n"
+        "/pending - عرض الطلبات المعلقة\n"
+        "/remove [ID] - إزالة مستخدم\n"
+    )
+    
+    await update.message.reply_text(text, parse_mode='Markdown')
+
+async def users_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """عرض المستخدمين المعتمدين"""
+    user_id = update.effective_user.id
+    
+    if not is_admin(user_id):
+        await update.message.reply_text("❌ هذا الأمر للمشرف فقط.")
+        return
+    
+    if not approved_users:
+        await update.message.reply_text("لا يوجد مستخدمين معتمدين.")
+        return
+    
+    text = "👥 **المستخدمين المعتمدين:**\n\n"
+    for uid in approved_users:
+        admin_mark = " 👑" if uid == ADMIN_ID else ""
+        text += f"• `{uid}`{admin_mark}\n"
+    
+    await update.message.reply_text(text, parse_mode='Markdown')
+
+async def pending_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """عرض الطلبات المعلقة"""
+    user_id = update.effective_user.id
+    
+    if not is_admin(user_id):
+        await update.message.reply_text("❌ هذا الأمر للمشرف فقط.")
+        return
+    
+    if not pending_requests:
+        await update.message.reply_text("✅ لا توجد طلبات معلقة.")
+        return
+    
+    text = "⏳ **الطلبات المعلقة:**\n\n"
+    for uid, info in pending_requests.items():
+        keyboard = [
+            [
+                InlineKeyboardButton("✅ موافقة", callback_data=f"approve_{uid}"),
+                InlineKeyboardButton("❌ رفض", callback_data=f"reject_{uid}")
+            ]
+        ]
+        await update.message.reply_text(
+            f"👤 {info['name']}\n"
+            f"🆔 @{info['username']}\n"
+            f"🔢 `{uid}`\n"
+            f"⏰ {info['time']}",
+            reply_markup=InlineKeyboardMarkup(keyboard),
+            parse_mode='Markdown'
+        )
+
+async def remove_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """إزالة مستخدم"""
+    user_id = update.effective_user.id
+    
+    if not is_admin(user_id):
+        await update.message.reply_text("❌ هذا الأمر للمشرف فقط.")
+        return
+    
+    if not context.args:
+        await update.message.reply_text("استخدم: /remove [User ID]")
+        return
+    
+    try:
+        target_id = int(context.args[0])
+        if target_id == ADMIN_ID:
+            await update.message.reply_text("❌ لا يمكن إزالة المشرف!")
+            return
+        
+        if target_id in approved_users:
+            approved_users.discard(target_id)
+            save_approved_users(approved_users)
+            await update.message.reply_text(f"✅ تم إزالة المستخدم `{target_id}`", parse_mode='Markdown')
+        else:
+            await update.message.reply_text("❌ المستخدم غير موجود في القائمة.")
+    except ValueError:
+        await update.message.reply_text("❌ ID غير صحيح.")
+
+async def handle_approval(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """معالجة الموافقة/الرفض"""
+    query = update.callback_query
+    await query.answer()
+    
+    user_id = update.effective_user.id
+    if not is_admin(user_id):
+        return
+    
+    data = query.data
+    
+    if data.startswith('approve_'):
+        target_id = int(data.replace('approve_', ''))
+        approved_users.add(target_id)
+        save_approved_users(approved_users)
+        
+        if target_id in pending_requests:
+            del pending_requests[target_id]
+        
+        # إعلام المستخدم
+        try:
+            await context.bot.send_message(
+                chat_id=target_id,
+                text=(
+                    "✅ **تمت الموافقة على طلبك!**\n\n"
+                    "يمكنك الآن استخدام البوت.\n"
+                    "أرسل /start للبدء."
+                )
+            )
+        except:
+            pass
+        
+        await query.edit_message_text(f"✅ تمت الموافقة على المستخدم `{target_id}`", parse_mode='Markdown')
+    
+    elif data.startswith('reject_'):
+        target_id = int(data.replace('reject_', ''))
+        
+        if target_id in pending_requests:
+            del pending_requests[target_id]
+        
+        # إعلام المستخدم
+        try:
+            await context.bot.send_message(
+                chat_id=target_id,
+                text="❌ **تم رفض طلبك.**\n\nللتواصل مع المشرف، راسله مباشرة."
+            )
+        except:
+            pass
+        
+        await query.edit_message_text(f"❌ تم رفض المستخدم `{target_id}`", parse_mode='Markdown')
+
+# ============================================
+# معالجة رموز الأسهم
+# ============================================
+
+async def handle_symbol(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """معالجة رمز السهم المدخل"""
+    user_id = update.effective_user.id
+    
+    # التحقق من الصلاحية
+    if not is_approved(user_id):
+        await update.message.reply_text(
+            "🔒 **غير مصرح**\n\n"
+            "أرسل /start لطلب الوصول."
+        )
+        return
+    
+    symbol = update.message.text.strip().upper()
+    
     await update.message.reply_text(f"⏳ جاري البحث عن {symbol}...")
     
-    # جلب معلومات السهم
     info = get_stock_info(symbol)
     
     if info['price'] == 0:
@@ -134,10 +391,8 @@ async def handle_symbol(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
     
-    # حفظ الرمز في حالة المستخدم
     user_states[user_id] = {'symbol': symbol, 'info': info}
     
-    # عرض قائمة الفريمات
     keyboard = [
         [
             InlineKeyboardButton("15 دقيقة", callback_data=f"tf_15m_{symbol}"),
@@ -171,11 +426,13 @@ async def handle_symbol(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 async def handle_timeframe_selection(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """
-    معالجة اختيار الفريم الزمني
-    """
+    """معالجة اختيار الفريم الزمني"""
     query = update.callback_query
     await query.answer()
+    
+    user_id = update.effective_user.id
+    if not is_approved(user_id):
+        return
     
     data = query.data
     
@@ -184,12 +441,10 @@ async def handle_timeframe_selection(update: Update, context: ContextTypes.DEFAU
         timeframe = parts[1]
         symbol = parts[2]
         
-        user_id = update.effective_user.id
         user_states[user_id] = user_states.get(user_id, {})
         user_states[user_id]['symbol'] = symbol
         user_states[user_id]['timeframe'] = timeframe
         
-        # عرض قائمة أنواع التحليل
         keyboard = [
             [InlineKeyboardButton("🌊 موجات إليوت", callback_data=f"analyze_elliott_{symbol}_{timeframe}")],
             [InlineKeyboardButton("📊 التحليل الكلاسيكي", callback_data=f"analyze_classic_{symbol}_{timeframe}")],
@@ -214,7 +469,6 @@ async def handle_timeframe_selection(update: Update, context: ContextTypes.DEFAU
     
     elif data.startswith('back_'):
         symbol = data.replace('back_', '')
-        # إعادة عرض قائمة الفريمات
         keyboard = [
             [
                 InlineKeyboardButton("15 دقيقة", callback_data=f"tf_15m_{symbol}"),
@@ -236,11 +490,13 @@ async def handle_timeframe_selection(update: Update, context: ContextTypes.DEFAU
         )
 
 async def handle_analysis_selection(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """
-    معالجة اختيار نوع التحليل
-    """
+    """معالجة اختيار نوع التحليل"""
     query = update.callback_query
     await query.answer()
+    
+    user_id = update.effective_user.id
+    if not is_approved(user_id):
+        return
     
     data = query.data
     
@@ -254,7 +510,6 @@ async def handle_analysis_selection(update: Update, context: ContextTypes.DEFAUL
     
     await query.edit_message_text(f"⏳ جاري تحليل {symbol}...")
     
-    # جلب البيانات
     df = get_stock_data(symbol, timeframe)
     
     if df.empty or len(df) < 20:
@@ -294,14 +549,12 @@ async def handle_analysis_selection(update: Update, context: ContextTypes.DEFAUL
         else:
             text = "نوع تحليل غير معروف"
         
-        # أزرار التنقل
         keyboard = [
             [InlineKeyboardButton("🔄 تحديث", callback_data=f"analyze_{analysis_type}_{symbol}_{timeframe}")],
             [InlineKeyboardButton("📋 تحليل شامل", callback_data=f"analyze_full_{symbol}_{timeframe}")],
             [InlineKeyboardButton("🔙 رجوع", callback_data=f"tf_{timeframe}_{symbol}")]
         ]
         
-        # تقسيم الرسالة إذا كانت طويلة
         if len(text) > 4000:
             text = text[:4000] + "\n\n... (تم اختصار النص)"
         
@@ -313,14 +566,10 @@ async def handle_analysis_selection(update: Update, context: ContextTypes.DEFAUL
         
     except Exception as e:
         logger.error(f"Analysis error: {e}")
-        await query.edit_message_text(
-            f"❌ حدث خطأ أثناء التحليل\n\n{str(e)}"
-        )
+        await query.edit_message_text(f"❌ حدث خطأ أثناء التحليل\n\n{str(e)}")
 
 async def perform_full_analysis(query, symbol: str, timeframe: str):
-    """
-    تنفيذ التحليل الشامل
-    """
+    """تنفيذ التحليل الشامل"""
     await query.edit_message_text(f"⏳ جاري التحليل الشامل لـ {symbol}...")
     
     df = get_stock_data(symbol, timeframe)
@@ -332,14 +581,12 @@ async def perform_full_analysis(query, symbol: str, timeframe: str):
     tf_name = TIMEFRAMES[timeframe]['name']
     info = get_stock_info(symbol)
     
-    # تنفيذ جميع التحليلات
     try:
         elliott = ElliottWaveAnalyzer().analyze(df)
         classic = ClassicAnalyzer().analyze(df)
         harmonic = HarmonicAnalyzer().analyze(df)
         ict = ICTAnalyzer().analyze(df)
         
-        # بناء التقرير الشامل
         change_emoji = "📈" if info['change'] >= 0 else "📉"
         
         text = f"📋 **تقرير شامل: {info['name']}** ({symbol})\n"
@@ -348,13 +595,11 @@ async def perform_full_analysis(query, symbol: str, timeframe: str):
         text += f"📅 {datetime.now().strftime('%Y-%m-%d %H:%M')}\n"
         text += "═" * 30 + "\n\n"
         
-        # ملخص موجات إليوت
         text += "🌊 **موجات إليوت:**\n"
         text += f"  • الموجة الحالية: {elliott.current_wave}\n"
         text += f"  • الاتجاه: {elliott.trend}\n"
         text += f"  • الثقة: {elliott.confidence:.0f}%\n\n"
         
-        # ملخص التحليل الكلاسيكي
         text += "📊 **التحليل الكلاسيكي:**\n"
         text += f"  • الاتجاه: {classic.current_trend}\n"
         text += f"  • الإشارة: {classic.signal.value}\n"
@@ -364,7 +609,6 @@ async def perform_full_analysis(query, symbol: str, timeframe: str):
             text += f"  • أقرب مقاومة: ${classic.resistances[0].level:.2f}\n"
         text += "\n"
         
-        # ملخص التحليل التوافقي
         text += "🔷 **التحليل التوافقي:**\n"
         if harmonic.patterns:
             p = harmonic.patterns[0]
@@ -375,7 +619,6 @@ async def perform_full_analysis(query, symbol: str, timeframe: str):
             text += "  • لا توجد أنماط مكتملة\n"
         text += "\n"
         
-        # ملخص ICT
         text += "🎯 **تحليل ICT:**\n"
         text += f"  • هيكل السوق: {ict.market_structure.value}\n"
         text += f"  • المنطقة: {ict.premium_discount}\n"
@@ -383,11 +626,9 @@ async def perform_full_analysis(query, symbol: str, timeframe: str):
             text += f"  • التوصية: {ict.optimal_trade_entry['direction']}\n"
         text += "\n"
         
-        # التوصية النهائية
         text += "═" * 30 + "\n"
         text += "💡 **التوصية النهائية:**\n"
         
-        # حساب التوصية بناءً على جميع التحليلات
         buy_signals = 0
         sell_signals = 0
         
@@ -447,9 +688,7 @@ async def perform_full_analysis(query, symbol: str, timeframe: str):
         await query.edit_message_text(f"❌ حدث خطأ: {str(e)}")
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """
-    أمر المساعدة
-    """
+    """أمر المساعدة"""
     text = (
         "❓ **دليل الاستخدام**\n\n"
         "**كيفية الاستخدام:**\n"
@@ -460,37 +699,24 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "🌊 **موجات إليوت:**\n"
         "• ترقيم الموجات (1-5, A-B-C)\n"
         "• تحديد القمم والقيعان\n"
-        "• مستويات فيبوناتشي\n"
-        "• نسبة الثقة في الترقيم\n\n"
+        "• مستويات فيبوناتشي\n\n"
         "📊 **التحليل الكلاسيكي:**\n"
         "• الدعم والمقاومة\n"
-        "• خطوط الاتجاه\n"
         "• النماذج الفنية\n"
         "• المؤشرات (RSI, MACD)\n\n"
         "🔷 **التحليل التوافقي:**\n"
         "• نماذج Gartley, Butterfly\n"
-        "• نماذج Bat, Crab\n"
-        "• نموذج ABCD\n"
-        "• مناطق الانعكاس\n\n"
+        "• نماذج Bat, Crab\n\n"
         "🎯 **مدرسة ICT:**\n"
-        "• هيكل السوق (BOS, CHoCH)\n"
         "• Order Blocks\n"
         "• Fair Value Gaps\n"
         "• مناطق السيولة\n"
-        "• Premium/Discount\n\n"
-        "**الفريمات المتاحة:**\n"
-        "15د | 30د | 1س | 4س | يومي\n\n"
-        "⚠️ **تنبيه:**\n"
-        "التحليلات للمعلومات فقط.\n"
-        "استشر مختصاً قبل الاستثمار."
     )
     
     await update.message.reply_text(text, parse_mode='Markdown')
 
 def main():
-    """
-    الدالة الرئيسية
-    """
+    """الدالة الرئيسية"""
     TOKEN = os.environ.get('BOT_TOKEN')
     
     if not TOKEN:
@@ -498,31 +724,32 @@ def main():
         print("❌ خطأ: BOT_TOKEN غير موجود في Environment Variables")
         return
     
-    # إنشاء التطبيق
     app = Application.builder().token(TOKEN).build()
     
-    # إضافة المعالجات
+    # أوامر عامة
     app.add_handler(CommandHandler("start", start_command))
     app.add_handler(CommandHandler("help", help_command))
     
-    # معالج الأزرار
+    # أوامر المشرف
+    app.add_handler(CommandHandler("admin", admin_command))
+    app.add_handler(CommandHandler("users", users_command))
+    app.add_handler(CommandHandler("pending", pending_command))
+    app.add_handler(CommandHandler("remove", remove_command))
+    
+    # معالجات الأزرار
+    app.add_handler(CallbackQueryHandler(handle_approval, pattern=r'^(approve|reject)_'))
     app.add_handler(CallbackQueryHandler(handle_analysis_selection, pattern=r'^analyze_'))
     app.add_handler(CallbackQueryHandler(handle_timeframe_selection))
     
-    # معالج الرسائل النصية (رموز الأسهم)
+    # معالج الرسائل النصية
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_symbol))
     
-    # بدء التشغيل
     logger.info("🚀 بدء تشغيل البوت...")
     print("=" * 50)
     print("🤖 بوت التحليل الفني المتقدم")
-    print(f"📅 {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-    print("📊 التحليلات المتاحة:")
-    print("   • موجات إليوت")
-    print("   • التحليل الكلاسيكي")
-    print("   • التحليل التوافقي")
-    print("   • مدرسة ICT")
-    print("⏰ الفريمات: 15د | 30د | 1س | 4س | يومي")
+    print("🔒 نظام طلبات الوصول مفعّل")
+    print(f"👑 المشرف: {ADMIN_ID}")
+    print(f"👥 المستخدمين المعتمدين: {len(approved_users)}")
     print("=" * 50)
     
     app.run_polling(drop_pending_updates=True)
