@@ -1,4 +1,4 @@
-python-telegram-bot==21.3
+python-telegram-bot==21.7
 yfinance>=0.2.40
 pandas>=2.0.0
-numpy>=1.24.0
+numpy>=1.26.0
