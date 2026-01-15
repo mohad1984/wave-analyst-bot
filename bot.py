@@ -1,8 +1,8 @@
 """
-بوت التحليل الفني المتقدم مع الشارتات
-Advanced Technical Analysis Telegram Bot with Charts
-موجات إليوت - التحليل الكلاسيكي - التحليل التوافقي - مدرسة ICT
-مع نظام طلبات الوصول ورسم الشارتات
+Advanced Technical Analysis Telegram Bot
+Elliott Waves - Classic Analysis - Harmonic Patterns - ICT - Fibonacci
+With Access Request System and Chart Drawing
+All text in English
 """
 
 import os
@@ -10,24 +10,25 @@ import json
 import logging
 import tempfile
 from datetime import datetime
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, InputFile
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, filters, ContextTypes
 import yfinance as yf
 import pandas as pd
 
-# استيراد محركات التحليل
+# Import analysis engines
 from elliott_waves import ElliottWaveAnalyzer
 from classic_analysis import ClassicAnalyzer
 from harmonic_patterns import HarmonicAnalyzer
 from ict_analysis import ICTAnalyzer
+from fibonacci_analysis import FibonacciAnalyzer
 from chart_drawer import ChartDrawer
 
-# إعدادات
+# Settings
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # ============================================
-# إعدادات الصلاحيات
+# ACCESS CONTROL SETTINGS
 # ============================================
 
 ADMIN_ID = 1177923997
@@ -53,30 +54,29 @@ approved_users = load_approved_users()
 pending_requests = {}
 
 # ============================================
-# الإعدادات
+# CONFIGURATION
 # ============================================
 
 TIMEFRAMES = {
-    '15m': {'interval': '15m', 'period': '5d', 'name': '15 دقيقة'},
-    '30m': {'interval': '30m', 'period': '10d', 'name': '30 دقيقة'},
-    '1h': {'interval': '1h', 'period': '1mo', 'name': '1 ساعة'},
-    '4h': {'interval': '1h', 'period': '3mo', 'name': '4 ساعات'},
-    '1d': {'interval': '1d', 'period': '6mo', 'name': 'يومي'},
-}
-
-ANALYSIS_TYPES = {
-    'elliott': {'name': '🌊 موجات إليوت', 'code': 'elliott'},
-    'classic': {'name': '📊 كلاسيكي', 'code': 'classic'},
-    'harmonic': {'name': '🔷 توافقي', 'code': 'harmonic'},
-    'ict': {'name': '🎯 ICT', 'code': 'ict'},
-    'full': {'name': '📋 شامل', 'code': 'all'},
+    '15m': {'interval': '15m', 'period': '5d', 'name': '15 Minutes'},
+    '30m': {'interval': '30m', 'period': '10d', 'name': '30 Minutes'},
+    '1h': {'interval': '1h', 'period': '1mo', 'name': '1 Hour'},
+    '4h': {'interval': '1h', 'period': '3mo', 'name': '4 Hours'},
+    '1d': {'interval': '1d', 'period': '6mo', 'name': 'Daily'},
 }
 
 user_states = {}
 chart_drawer = ChartDrawer()
 
+# Initialize analyzers
+elliott_analyzer = ElliottWaveAnalyzer()
+classic_analyzer = ClassicAnalyzer()
+harmonic_analyzer = HarmonicAnalyzer()
+ict_analyzer = ICTAnalyzer()
+fibonacci_analyzer = FibonacciAnalyzer()
+
 # ============================================
-# دوال مساعدة
+# HELPER FUNCTIONS
 # ============================================
 
 def is_approved(user_id: int) -> bool:
@@ -123,13 +123,13 @@ def get_stock_info(symbol: str) -> dict:
         return {'name': symbol, 'price': 0, 'change': 0, 'volume': 0}
 
 # ============================================
-# أوامر البوت
+# BOT COMMANDS
 # ============================================
 
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     user_name = update.effective_user.full_name
-    username = update.effective_user.username or "بدون يوزر"
+    username = update.effective_user.username or "No username"
     
     if not is_approved(user_id):
         if user_id not in pending_requests:
@@ -141,8 +141,8 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             
             keyboard = [
                 [
-                    InlineKeyboardButton("✅ موافقة", callback_data=f"approve_{user_id}"),
-                    InlineKeyboardButton("❌ رفض", callback_data=f"reject_{user_id}")
+                    InlineKeyboardButton("✅ Approve", callback_data=f"approve_{user_id}"),
+                    InlineKeyboardButton("❌ Reject", callback_data=f"reject_{user_id}")
                 ]
             ]
             
@@ -150,11 +150,11 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await context.bot.send_message(
                     chat_id=ADMIN_ID,
                     text=(
-                        "🔔 **طلب وصول جديد**\n\n"
-                        f"👤 الاسم: {user_name}\n"
-                        f"🆔 اليوزر: @{username}\n"
+                        "🔔 **New Access Request**\n\n"
+                        f"👤 Name: {user_name}\n"
+                        f"🆔 Username: @{username}\n"
                         f"🔢 ID: `{user_id}`\n"
-                        f"⏰ الوقت: {pending_requests[user_id]['time']}"
+                        f"⏰ Time: {pending_requests[user_id]['time']}"
                     ),
                     reply_markup=InlineKeyboardMarkup(keyboard),
                     parse_mode='Markdown'
@@ -164,36 +164,37 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             
             if update.message:
                 await update.message.reply_text(
-                    "🔒 **البوت خاص**\n\n"
-                    "تم إرسال طلب وصول للمشرف.\n"
-                    "سيتم إعلامك عند الموافقة على طلبك.\n\n"
-                    "⏳ انتظر الموافقة..."
+                    "🔒 **Private Bot**\n\n"
+                    "Access request sent to admin.\n"
+                    "You will be notified upon approval.\n\n"
+                    "⏳ Waiting for approval..."
                 )
         else:
             if update.message:
                 await update.message.reply_text(
-                    "⏳ **طلبك قيد المراجعة**\n\n"
-                    "تم إرسال طلبك مسبقاً.\n"
-                    "انتظر موافقة المشرف."
+                    "⏳ **Request Pending**\n\n"
+                    "Your request was already sent.\n"
+                    "Please wait for admin approval."
                 )
         return
     
     text = (
-        "🤖 **بوت التحليل الفني المتقدم**\n\n"
-        "📊 أرسل **رمز السهم** للحصول على تحليل مع شارت\n\n"
-        "**أمثلة:**\n"
+        "🤖 **Advanced Technical Analysis Bot**\n\n"
+        "📊 Send a **stock symbol** to get analysis with chart\n\n"
+        "**Examples:**\n"
         "• `AAPL` - Apple\n"
         "• `TSLA` - Tesla\n"
         "• `MSFT` - Microsoft\n"
         "• `NVDA` - NVIDIA\n"
-        "• `2222.SR` - أرامكو\n\n"
-        "**أنواع التحليل:**\n"
-        "🌊 موجات إليوت (مع الترقيم)\n"
-        "📊 التحليل الكلاسيكي (دعم/مقاومة)\n"
-        "🔷 التحليل التوافقي (النماذج)\n"
-        "🎯 مدرسة ICT (OB/FVG)\n\n"
-        "**الفريمات:** 15د | 30د | 1س | 4س | يومي\n\n"
-        "📝 أرسل رمز السهم للبدء..."
+        "• `2222.SR` - Aramco\n\n"
+        "**Analysis Types:**\n"
+        "🌊 Elliott Waves (with wave count)\n"
+        "📊 Classic Analysis (S/R levels)\n"
+        "🔷 Harmonic Patterns (XABCD)\n"
+        "🎯 ICT Concepts (OB/FVG)\n"
+        "📐 Fibonacci (Separate)\n\n"
+        "**Timeframes:** 15m | 30m | 1H | 4H | Daily\n\n"
+        "📝 Send a symbol to start..."
     )
     
     if update.message:
@@ -205,17 +206,17 @@ async def admin_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     
     if not is_admin(user_id):
-        await update.message.reply_text("❌ هذا الأمر للمشرف فقط.")
+        await update.message.reply_text("❌ Admin only command.")
         return
     
     text = (
-        "👑 **لوحة تحكم المشرف**\n\n"
-        f"👥 المستخدمين المعتمدين: {len(approved_users)}\n"
-        f"⏳ الطلبات المعلقة: {len(pending_requests)}\n\n"
-        "**الأوامر:**\n"
-        "/users - عرض المستخدمين\n"
-        "/pending - عرض الطلبات\n"
-        "/remove [ID] - إزالة مستخدم\n"
+        "👑 **Admin Panel**\n\n"
+        f"👥 Approved Users: {len(approved_users)}\n"
+        f"⏳ Pending Requests: {len(pending_requests)}\n\n"
+        "**Commands:**\n"
+        "/users - View users\n"
+        "/pending - View pending requests\n"
+        "/remove [ID] - Remove user\n"
     )
     
     await update.message.reply_text(text, parse_mode='Markdown')
@@ -224,10 +225,10 @@ async def users_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     
     if not is_admin(user_id):
-        await update.message.reply_text("❌ هذا الأمر للمشرف فقط.")
+        await update.message.reply_text("❌ Admin only command.")
         return
     
-    text = "👥 **المستخدمين المعتمدين:**\n\n"
+    text = "👥 **Approved Users:**\n\n"
     for uid in approved_users:
         admin_mark = " 👑" if uid == ADMIN_ID else ""
         text += f"• `{uid}`{admin_mark}\n"
@@ -238,18 +239,18 @@ async def pending_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     
     if not is_admin(user_id):
-        await update.message.reply_text("❌ هذا الأمر للمشرف فقط.")
+        await update.message.reply_text("❌ Admin only command.")
         return
     
     if not pending_requests:
-        await update.message.reply_text("✅ لا توجد طلبات معلقة.")
+        await update.message.reply_text("✅ No pending requests.")
         return
     
     for uid, info in pending_requests.items():
         keyboard = [
             [
-                InlineKeyboardButton("✅ موافقة", callback_data=f"approve_{uid}"),
-                InlineKeyboardButton("❌ رفض", callback_data=f"reject_{uid}")
+                InlineKeyboardButton("✅ Approve", callback_data=f"approve_{uid}"),
+                InlineKeyboardButton("❌ Reject", callback_data=f"reject_{uid}")
             ]
         ]
         await update.message.reply_text(
@@ -262,48 +263,48 @@ async def remove_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     
     if not is_admin(user_id):
-        await update.message.reply_text("❌ هذا الأمر للمشرف فقط.")
+        await update.message.reply_text("❌ Admin only command.")
         return
     
     if not context.args:
-        await update.message.reply_text("استخدم: /remove [User ID]")
+        await update.message.reply_text("Usage: /remove [User ID]")
         return
     
     try:
         target_id = int(context.args[0])
         if target_id == ADMIN_ID:
-            await update.message.reply_text("❌ لا يمكن إزالة المشرف!")
+            await update.message.reply_text("❌ Cannot remove admin!")
             return
         
         if target_id in approved_users:
             approved_users.discard(target_id)
             save_approved_users(approved_users)
-            await update.message.reply_text(f"✅ تم إزالة `{target_id}`", parse_mode='Markdown')
+            await update.message.reply_text(f"✅ Removed `{target_id}`", parse_mode='Markdown')
         else:
-            await update.message.reply_text("❌ المستخدم غير موجود.")
+            await update.message.reply_text("❌ User not found.")
     except ValueError:
-        await update.message.reply_text("❌ ID غير صحيح.")
+        await update.message.reply_text("❌ Invalid ID.")
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = (
-        "❓ **دليل الاستخدام**\n\n"
-        "1️⃣ أرسل رمز السهم\n"
-        "2️⃣ اختر الفريم الزمني\n"
-        "3️⃣ اختر نوع التحليل\n"
-        "4️⃣ استلم الشارت مع التحليل!\n\n"
-        "**الشارت يتضمن:**\n"
-        "• رسم الشموع اليابانية\n"
-        "• ترقيم موجات إليوت\n"
-        "• خطوط الدعم والمقاومة\n"
-        "• النماذج التوافقية\n"
-        "• Order Blocks و FVG\n"
-        "• خطوط الاتجاه\n"
-        "• مستويات فيبوناتشي\n"
+        "❓ **User Guide**\n\n"
+        "1️⃣ Send stock symbol\n"
+        "2️⃣ Select timeframe\n"
+        "3️⃣ Select analysis type\n"
+        "4️⃣ Receive chart with analysis!\n\n"
+        "**Chart includes:**\n"
+        "• Candlestick chart\n"
+        "• Elliott Wave count\n"
+        "• Support/Resistance lines\n"
+        "• Harmonic patterns\n"
+        "• Order Blocks & FVG\n"
+        "• Fibonacci levels\n"
+        "• Entry, Targets & Stop Loss\n"
     )
     await update.message.reply_text(text, parse_mode='Markdown')
 
 # ============================================
-# معالجات الأزرار
+# BUTTON HANDLERS
 # ============================================
 
 async def handle_approval(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -327,12 +328,12 @@ async def handle_approval(update: Update, context: ContextTypes.DEFAULT_TYPE):
         try:
             await context.bot.send_message(
                 chat_id=target_id,
-                text="✅ **تمت الموافقة!**\n\nأرسل /start للبدء."
+                text="✅ **Access Approved!**\n\nSend /start to begin."
             )
         except:
             pass
         
-        await query.edit_message_text(f"✅ تمت الموافقة على `{target_id}`", parse_mode='Markdown')
+        await query.edit_message_text(f"✅ Approved `{target_id}`", parse_mode='Markdown')
     
     elif data.startswith('reject_'):
         target_id = int(data.replace('reject_', ''))
@@ -343,34 +344,34 @@ async def handle_approval(update: Update, context: ContextTypes.DEFAULT_TYPE):
         try:
             await context.bot.send_message(
                 chat_id=target_id,
-                text="❌ **تم رفض طلبك.**"
+                text="❌ **Access Denied.**"
             )
         except:
             pass
         
-        await query.edit_message_text(f"❌ تم رفض `{target_id}`", parse_mode='Markdown')
+        await query.edit_message_text(f"❌ Rejected `{target_id}`", parse_mode='Markdown')
 
 async def handle_symbol(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     
     if not is_approved(user_id):
-        await update.message.reply_text("🔒 أرسل /start لطلب الوصول.")
+        await update.message.reply_text("🔒 Send /start to request access.")
         return
     
     symbol = update.message.text.strip().upper()
     
-    # تجاهل الأوامر
+    # Ignore commands
     if symbol.startswith('/'):
         return
     
-    msg = await update.message.reply_text(f"⏳ جاري البحث عن {symbol}...")
+    msg = await update.message.reply_text(f"⏳ Searching for {symbol}...")
     
     info = get_stock_info(symbol)
     
     if info['price'] == 0:
         await msg.edit_text(
-            f"❌ لم يتم العثور على: {symbol}\n\n"
-            "تأكد من صحة الرمز."
+            f"❌ Symbol not found: {symbol}\n\n"
+            "Please verify the symbol."
         )
         return
     
@@ -378,18 +379,18 @@ async def handle_symbol(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     keyboard = [
         [
-            InlineKeyboardButton("15 دقيقة", callback_data=f"tf_15m_{symbol}"),
-            InlineKeyboardButton("30 دقيقة", callback_data=f"tf_30m_{symbol}")
+            InlineKeyboardButton("15 Min", callback_data=f"tf_15m_{symbol}"),
+            InlineKeyboardButton("30 Min", callback_data=f"tf_30m_{symbol}")
         ],
         [
-            InlineKeyboardButton("1 ساعة", callback_data=f"tf_1h_{symbol}"),
-            InlineKeyboardButton("4 ساعات", callback_data=f"tf_4h_{symbol}")
+            InlineKeyboardButton("1 Hour", callback_data=f"tf_1h_{symbol}"),
+            InlineKeyboardButton("4 Hours", callback_data=f"tf_4h_{symbol}")
         ],
         [
-            InlineKeyboardButton("📊 يومي", callback_data=f"tf_1d_{symbol}")
+            InlineKeyboardButton("📊 Daily", callback_data=f"tf_1d_{symbol}")
         ],
         [
-            InlineKeyboardButton("📋 تحليل شامل سريع", callback_data=f"quick_{symbol}")
+            InlineKeyboardButton("📋 Quick Full Analysis", callback_data=f"quick_{symbol}")
         ]
     ]
     
@@ -397,9 +398,9 @@ async def handle_symbol(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     text = (
         f"📊 **{info['name']}** ({symbol})\n\n"
-        f"💰 السعر: ${info['price']:.2f}\n"
-        f"{change_emoji} التغير: {info['change']:+.2f}%\n\n"
-        "اختر الفريم الزمني:"
+        f"💰 Price: ${info['price']:.2f}\n"
+        f"{change_emoji} Change: {info['change']:+.2f}%\n\n"
+        "Select timeframe:"
     )
     
     await msg.edit_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='Markdown')
@@ -414,13 +415,13 @@ async def handle_timeframe(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     data = query.data
     
-    # تحليل سريع
+    # Quick analysis
     if data.startswith('quick_'):
         symbol = data.replace('quick_', '')
         await generate_and_send_chart(query, context, symbol, '1d', ['all'])
         return
     
-    # اختيار الفريم
+    # Timeframe selection
     if data.startswith('tf_'):
         parts = data.split('_')
         timeframe = parts[1]
@@ -432,51 +433,54 @@ async def handle_timeframe(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         keyboard = [
             [
-                InlineKeyboardButton("🌊 إليوت", callback_data=f"chart_elliott_{symbol}_{timeframe}"),
-                InlineKeyboardButton("📊 كلاسيكي", callback_data=f"chart_classic_{symbol}_{timeframe}")
+                InlineKeyboardButton("🌊 Elliott", callback_data=f"chart_elliott_{symbol}_{timeframe}"),
+                InlineKeyboardButton("📊 Classic", callback_data=f"chart_classic_{symbol}_{timeframe}")
             ],
             [
-                InlineKeyboardButton("🔷 توافقي", callback_data=f"chart_harmonic_{symbol}_{timeframe}"),
+                InlineKeyboardButton("🔷 Harmonic", callback_data=f"chart_harmonic_{symbol}_{timeframe}"),
                 InlineKeyboardButton("🎯 ICT", callback_data=f"chart_ict_{symbol}_{timeframe}")
             ],
             [
-                InlineKeyboardButton("📋 تحليل شامل (الكل)", callback_data=f"chart_all_{symbol}_{timeframe}")
+                InlineKeyboardButton("📐 Fibonacci", callback_data=f"chart_fibonacci_{symbol}_{timeframe}")
             ],
             [
-                InlineKeyboardButton("🔙 رجوع", callback_data=f"back_{symbol}")
+                InlineKeyboardButton("📋 Full Analysis (All)", callback_data=f"chart_all_{symbol}_{timeframe}")
+            ],
+            [
+                InlineKeyboardButton("🔙 Back", callback_data=f"back_{symbol}")
             ]
         ]
         
         tf_name = TIMEFRAMES[timeframe]['name']
         
         await query.edit_message_text(
-            f"📊 **{symbol}** - فريم {tf_name}\n\n"
-            "اختر نوع التحليل للشارت:",
+            f"📊 **{symbol}** - {tf_name}\n\n"
+            "Select analysis type:",
             reply_markup=InlineKeyboardMarkup(keyboard),
             parse_mode='Markdown'
         )
     
-    # رجوع
+    # Back button
     elif data.startswith('back_'):
         symbol = data.replace('back_', '')
         info = get_stock_info(symbol)
         
         keyboard = [
             [
-                InlineKeyboardButton("15 دقيقة", callback_data=f"tf_15m_{symbol}"),
-                InlineKeyboardButton("30 دقيقة", callback_data=f"tf_30m_{symbol}")
+                InlineKeyboardButton("15 Min", callback_data=f"tf_15m_{symbol}"),
+                InlineKeyboardButton("30 Min", callback_data=f"tf_30m_{symbol}")
             ],
             [
-                InlineKeyboardButton("1 ساعة", callback_data=f"tf_1h_{symbol}"),
-                InlineKeyboardButton("4 ساعات", callback_data=f"tf_4h_{symbol}")
+                InlineKeyboardButton("1 Hour", callback_data=f"tf_1h_{symbol}"),
+                InlineKeyboardButton("4 Hours", callback_data=f"tf_4h_{symbol}")
             ],
             [
-                InlineKeyboardButton("📊 يومي", callback_data=f"tf_1d_{symbol}")
+                InlineKeyboardButton("📊 Daily", callback_data=f"tf_1d_{symbol}")
             ]
         ]
         
         await query.edit_message_text(
-            f"📊 **{symbol}**\n\nاختر الفريم الزمني:",
+            f"📊 **{symbol}**\n\nSelect timeframe:",
             reply_markup=InlineKeyboardMarkup(keyboard),
             parse_mode='Markdown'
         )
@@ -507,17 +511,17 @@ async def handle_chart_request(update: Update, context: ContextTypes.DEFAULT_TYP
     await generate_and_send_chart(query, context, symbol, timeframe, analysis_types)
 
 async def generate_and_send_chart(query, context, symbol: str, timeframe: str, analysis_types: list):
-    """توليد وإرسال الشارت"""
+    """Generate and send chart with analysis"""
     
-    await query.edit_message_text(f"⏳ جاري إنشاء الشارت لـ {symbol}...")
+    await query.edit_message_text(f"⏳ Generating chart for {symbol}...")
     
-    # جلب البيانات
+    # Fetch data
     df = get_stock_data(symbol, timeframe)
     
     if df.empty or len(df) < 20:
         await query.edit_message_text(
-            f"❌ بيانات غير كافية لـ {symbol}\n\n"
-            "جرب فريم زمني أطول."
+            f"❌ Insufficient data for {symbol}\n\n"
+            "Try a longer timeframe."
         )
         return
     
@@ -525,41 +529,41 @@ async def generate_and_send_chart(query, context, symbol: str, timeframe: str, a
     info = get_stock_info(symbol)
     
     try:
-        # إنشاء الشارت
+        # Generate chart
         chart_buffer = chart_drawer.generate_chart(
             df, symbol, tf_name, analysis_types
         )
         
-        # إنشاء التحليل النصي
-        analysis_text = await generate_analysis_text(df, symbol, timeframe, analysis_types, info)
+        # Generate analysis text
+        analysis_text = generate_analysis_text(df, symbol, timeframe, analysis_types, info)
         
-        # إرسال الصورة
+        # Send photo
         await context.bot.send_photo(
             chat_id=query.message.chat_id,
             photo=chart_buffer,
-            caption=analysis_text[:1024],  # حد تيليجرام
+            caption=analysis_text[:1024],
             parse_mode='Markdown'
         )
         
-        # أزرار المتابعة
+        # Follow-up buttons
         keyboard = [
             [
-                InlineKeyboardButton("🔄 تحديث", callback_data=f"chart_{'_'.join(analysis_types)}_{symbol}_{timeframe}"),
-                InlineKeyboardButton("📋 شامل", callback_data=f"chart_all_{symbol}_{timeframe}")
+                InlineKeyboardButton("🔄 Refresh", callback_data=f"chart_{'_'.join(analysis_types)}_{symbol}_{timeframe}"),
+                InlineKeyboardButton("📋 Full", callback_data=f"chart_all_{symbol}_{timeframe}")
             ],
             [
-                InlineKeyboardButton("🔙 تغيير الفريم", callback_data=f"back_{symbol}"),
-                InlineKeyboardButton("🏠 الرئيسية", callback_data="main_menu")
+                InlineKeyboardButton("🔙 Change TF", callback_data=f"back_{symbol}"),
+                InlineKeyboardButton("🏠 Home", callback_data="main_menu")
             ]
         ]
         
         await context.bot.send_message(
             chat_id=query.message.chat_id,
-            text="اختر الإجراء التالي:",
+            text="Select next action:",
             reply_markup=InlineKeyboardMarkup(keyboard)
         )
         
-        # حذف رسالة الانتظار
+        # Delete waiting message
         try:
             await query.message.delete()
         except:
@@ -567,42 +571,60 @@ async def generate_and_send_chart(query, context, symbol: str, timeframe: str, a
         
     except Exception as e:
         logger.error(f"Chart error: {e}")
-        await query.edit_message_text(f"❌ حدث خطأ: {str(e)}")
+        await query.edit_message_text(f"❌ Error: {str(e)}")
 
-async def generate_analysis_text(df, symbol: str, timeframe: str, analysis_types: list, info: dict) -> str:
-    """توليد النص التحليلي"""
+def generate_analysis_text(df, symbol: str, timeframe: str, analysis_types: list, info: dict) -> str:
+    """Generate analysis text summary"""
     
     tf_name = TIMEFRAMES[timeframe]['name']
     change_emoji = "📈" if info['change'] >= 0 else "📉"
     
     text = f"📊 **{info['name']}** ({symbol})\n"
     text += f"⏰ {tf_name} | 💰 ${info['price']:.2f} {change_emoji} {info['change']:+.2f}%\n"
-    text += "─" * 20 + "\n\n"
+    text += "─" * 25 + "\n\n"
+    
+    # Get targets from chart drawer
+    targets = chart_drawer.get_targets_text(df)
+    direction = "🟢 LONG" if targets['is_bullish'] else "🔴 SHORT"
     
     try:
         if 'elliott' in analysis_types or 'all' in analysis_types:
-            elliott = ElliottWaveAnalyzer().analyze(df)
-            text += f"🌊 **إليوت:** {elliott.current_wave} ({elliott.trend})\n"
+            elliott = elliott_analyzer.analyze(df)
+            text += f"🌊 **Elliott:** Wave {elliott.current_wave} ({elliott.trend})\n"
         
         if 'classic' in analysis_types or 'all' in analysis_types:
-            classic = ClassicAnalyzer().analyze(df)
-            text += f"📊 **كلاسيكي:** {classic.current_trend} - {classic.signal.value}\n"
+            classic = classic_analyzer.analyze(df)
+            text += f"📊 **Classic:** {classic.current_trend} - {classic.signal.value}\n"
         
         if 'harmonic' in analysis_types or 'all' in analysis_types:
-            harmonic = HarmonicAnalyzer().analyze(df)
+            harmonic = harmonic_analyzer.analyze(df)
             if harmonic.patterns:
                 p = harmonic.patterns[0]
-                text += f"🔷 **توافقي:** {p.pattern_type.value}\n"
+                text += f"🔷 **Harmonic:** {p.pattern_type.value}\n"
             else:
-                text += "🔷 **توافقي:** لا نماذج\n"
+                text += "🔷 **Harmonic:** No pattern\n"
         
         if 'ict' in analysis_types or 'all' in analysis_types:
-            ict = ICTAnalyzer().analyze(df)
+            ict = ict_analyzer.analyze(df)
             text += f"🎯 **ICT:** {ict.market_structure.value}\n"
+        
+        if 'fibonacci' in analysis_types:
+            fib = fibonacci_analyzer.analyze(df)
+            text += f"📐 **Fibonacci:** {fib.current_zone}\n"
+            text += f"   Recommendation: {fib.recommendation}\n"
         
     except Exception as e:
         logger.error(f"Analysis text error: {e}")
-        text += "\n⚠️ بعض التحليلات غير متاحة"
+        text += "\n⚠️ Some analysis unavailable"
+    
+    # Add targets and stop loss
+    text += "\n" + "─" * 25 + "\n"
+    text += f"**Direction:** {direction}\n"
+    text += f"**Entry:** ${targets['entry']:.2f}\n"
+    text += f"**TP1:** ${targets['target_1']:.2f}\n"
+    text += f"**TP2:** ${targets['target_2']:.2f}\n"
+    text += f"**TP3:** ${targets['target_3']:.2f}\n"
+    text += f"**Stop Loss:** ${targets['stop_loss']:.2f}\n"
     
     text += f"\n📅 {datetime.now().strftime('%Y-%m-%d %H:%M')}"
     
@@ -616,20 +638,20 @@ async def handle_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await start_command(update, context)
 
 # ============================================
-# الدالة الرئيسية
+# MAIN FUNCTION
 # ============================================
 
 def main():
     TOKEN = os.environ.get('BOT_TOKEN')
     
     if not TOKEN:
-        logger.error("❌ BOT_TOKEN غير موجود!")
-        print("❌ خطأ: BOT_TOKEN غير موجود")
+        logger.error("❌ BOT_TOKEN not found!")
+        print("❌ Error: BOT_TOKEN not found")
         return
     
     app = Application.builder().token(TOKEN).build()
     
-    # الأوامر
+    # Commands
     app.add_handler(CommandHandler("start", start_command))
     app.add_handler(CommandHandler("help", help_command))
     app.add_handler(CommandHandler("admin", admin_command))
@@ -637,21 +659,21 @@ def main():
     app.add_handler(CommandHandler("pending", pending_command))
     app.add_handler(CommandHandler("remove", remove_command))
     
-    # معالجات الأزرار
+    # Button handlers
     app.add_handler(CallbackQueryHandler(handle_approval, pattern=r'^(approve|reject)_'))
     app.add_handler(CallbackQueryHandler(handle_chart_request, pattern=r'^chart_'))
     app.add_handler(CallbackQueryHandler(handle_main_menu, pattern=r'^main_menu$'))
     app.add_handler(CallbackQueryHandler(handle_timeframe))
     
-    # الرسائل النصية
+    # Text messages
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_symbol))
     
-    logger.info("🚀 بدء تشغيل البوت...")
+    logger.info("🚀 Starting bot...")
     print("=" * 50)
-    print("🤖 بوت التحليل الفني المتقدم")
-    print("📊 مع رسم الشارتات")
-    print("🔒 نظام طلبات الوصول مفعّل")
-    print(f"👑 المشرف: {ADMIN_ID}")
+    print("🤖 Advanced Technical Analysis Bot")
+    print("📊 With Chart Drawing")
+    print("🔒 Access Request System Active")
+    print(f"👑 Admin: {ADMIN_ID}")
     print("=" * 50)
     
     app.run_polling(drop_pending_updates=True)
