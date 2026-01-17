@@ -476,7 +476,8 @@ async def handle_timeframe(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 InlineKeyboardButton("🎯 ICT", callback_data=f"chart_ict_{symbol}_{timeframe}")
             ],
             [
-                InlineKeyboardButton("📐 Fibonacci", callback_data=f"chart_fibonacci_{symbol}_{timeframe}")
+                InlineKeyboardButton("📐 Fibonacci", callback_data=f"chart_fibonacci_{symbol}_{timeframe}"),
+                InlineKeyboardButton("📊 Volume Profile", callback_data=f"chart_volume_{symbol}_{timeframe}")
             ],
             [
                 InlineKeyboardButton("📋 Full Analysis (All)", callback_data=f"chart_all_{symbol}_{timeframe}")
@@ -570,10 +571,13 @@ async def generate_and_send_chart(query, context, symbol: str, timeframe: str, a
     info = get_stock_info(symbol)
     
     try:
-        # Generate chart with MA and Volume Profile
+        # Check if volume profile is selected as standalone
+        show_volume_profile = 'volume' in analysis_types or 'all' in analysis_types
+        
+        # Generate chart with MA and optionally Volume Profile
         chart_buffer = chart_drawer.generate_chart(
             df, symbol, tf_name, analysis_types,
-            show_ma=True, show_volume_profile=True
+            show_ma=True, show_volume_profile=show_volume_profile
         )
         
         # Generate analysis text
@@ -664,6 +668,12 @@ def generate_analysis_text(df, symbol: str, timeframe: str, analysis_types: list
         if 'fibonacci' in analysis_types:
             fib = fibonacci_analyzer.analyze(df)
             text += f"📐 **Fibonacci:** {fib.current_zone}\n"
+        
+        if 'volume' in analysis_types or 'all' in analysis_types:
+            # Calculate Volume Profile info
+            poc_price = df['Close'].iloc[-20:].mean()  # Approximate POC
+            high_vol_zone = df.loc[df['Volume'].idxmax(), 'Close'] if 'Volume' in df.columns else poc_price
+            text += f"📊 **Volume Profile:** POC ~${poc_price:.2f}\n"
         
     except Exception as e:
         logger.error(f"Analysis text error: {e}")
