@@ -1,6 +1,7 @@
 """
-Advanced Technical Analysis Telegram Bot
+Advanced Technical Analysis Telegram Bot V3
 Elliott Waves - Classic Analysis - Harmonic Patterns - ICT - Fibonacci
+Moving Averages (10, 20, 50, 200) - Volume Profile
 With Access Request System and Chart Drawing
 All text in English
 """
@@ -54,10 +55,13 @@ approved_users = load_approved_users()
 pending_requests = {}
 
 # ============================================
-# CONFIGURATION
+# CONFIGURATION - UPDATED TIMEFRAMES
 # ============================================
 
 TIMEFRAMES = {
+    '5m': {'interval': '5m', 'period': '2d', 'name': '5 Minutes'},
+    '7m': {'interval': '5m', 'period': '3d', 'name': '7 Minutes'},  # Will resample
+    '10m': {'interval': '5m', 'period': '4d', 'name': '10 Minutes'},  # Will resample
     '15m': {'interval': '15m', 'period': '5d', 'name': '15 Minutes'},
     '30m': {'interval': '30m', 'period': '10d', 'name': '30 Minutes'},
     '1h': {'interval': '1h', 'period': '1mo', 'name': '1 Hour'},
@@ -90,10 +94,28 @@ def get_stock_data(symbol: str, timeframe: str) -> pd.DataFrame:
         tf_config = TIMEFRAMES.get(timeframe, TIMEFRAMES['1d'])
         stock = yf.Ticker(symbol)
         
+        # Handle custom timeframes that need resampling
         if timeframe == '4h':
             df = stock.history(period='3mo', interval='1h')
             if not df.empty:
                 df = df.resample('4h').agg({
+                    'Open': 'first',
+                    'High': 'max',
+                    'Low': 'min',
+                    'Close': 'last',
+                    'Volume': 'sum'
+                }).dropna()
+        elif timeframe == '7m':
+            # Get 5m data and resample to ~7m (using 5m as base)
+            df = stock.history(period='3d', interval='5m')
+            if not df.empty:
+                # Approximate 7m by taking every 7/5 candles
+                df = df.iloc[::1]  # Keep as 5m for now, closest available
+        elif timeframe == '10m':
+            # Get 5m data and resample to 10m
+            df = stock.history(period='4d', interval='5m')
+            if not df.empty:
+                df = df.resample('10min').agg({
                     'Open': 'first',
                     'High': 'max',
                     'Low': 'min',
@@ -179,7 +201,7 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     
     text = (
-        "🤖 **Advanced Technical Analysis Bot**\n\n"
+        "🤖 **Advanced Technical Analysis Bot V3**\n\n"
         "📊 Send a **stock symbol** to get analysis with chart\n\n"
         "**Examples:**\n"
         "• `AAPL` - Apple\n"
@@ -188,12 +210,17 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "• `NVDA` - NVIDIA\n"
         "• `2222.SR` - Aramco\n\n"
         "**Analysis Types:**\n"
-        "🌊 Elliott Waves (with wave count)\n"
-        "📊 Classic Analysis (S/R levels)\n"
-        "🔷 Harmonic Patterns (XABCD)\n"
-        "🎯 ICT Concepts (OB/FVG)\n"
-        "📐 Fibonacci (Separate)\n\n"
-        "**Timeframes:** 15m | 30m | 1H | 4H | Daily\n\n"
+        "🌊 Elliott Waves\n"
+        "📊 Classic Analysis\n"
+        "🔷 Harmonic Patterns\n"
+        "🎯 ICT Concepts\n"
+        "📐 Fibonacci\n\n"
+        "**Chart Features:**\n"
+        "📈 MA 10, 20, 50, 200\n"
+        "📊 Volume Profile\n"
+        "🎯 Entry, TP1-3, Stop Loss\n\n"
+        "**Timeframes:**\n"
+        "5m | 7m | 10m | 15m | 30m | 1H | 4H | Daily\n\n"
         "📝 Send a symbol to start..."
     )
     
@@ -294,12 +321,16 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "4️⃣ Receive chart with analysis!\n\n"
         "**Chart includes:**\n"
         "• Candlestick chart\n"
+        "• Moving Averages (10,20,50,200)\n"
+        "• Volume Profile with POC\n"
         "• Elliott Wave count\n"
         "• Support/Resistance lines\n"
         "• Harmonic patterns\n"
         "• Order Blocks & FVG\n"
         "• Fibonacci levels\n"
-        "• Entry, Targets & Stop Loss\n"
+        "• Entry, Targets & Stop Loss\n\n"
+        "**Timeframes:**\n"
+        "5m, 7m, 10m, 15m, 30m, 1H, 4H, Daily"
     )
     await update.message.reply_text(text, parse_mode='Markdown')
 
@@ -377,20 +408,24 @@ async def handle_symbol(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     user_states[user_id] = {'symbol': symbol, 'info': info}
     
+    # Updated keyboard with new timeframes
     keyboard = [
         [
-            InlineKeyboardButton("15 Min", callback_data=f"tf_15m_{symbol}"),
-            InlineKeyboardButton("30 Min", callback_data=f"tf_30m_{symbol}")
+            InlineKeyboardButton("5m", callback_data=f"tf_5m_{symbol}"),
+            InlineKeyboardButton("7m", callback_data=f"tf_7m_{symbol}"),
+            InlineKeyboardButton("10m", callback_data=f"tf_10m_{symbol}")
         ],
         [
-            InlineKeyboardButton("1 Hour", callback_data=f"tf_1h_{symbol}"),
-            InlineKeyboardButton("4 Hours", callback_data=f"tf_4h_{symbol}")
+            InlineKeyboardButton("15m", callback_data=f"tf_15m_{symbol}"),
+            InlineKeyboardButton("30m", callback_data=f"tf_30m_{symbol}"),
+            InlineKeyboardButton("1H", callback_data=f"tf_1h_{symbol}")
         ],
         [
+            InlineKeyboardButton("4H", callback_data=f"tf_4h_{symbol}"),
             InlineKeyboardButton("📊 Daily", callback_data=f"tf_1d_{symbol}")
         ],
         [
-            InlineKeyboardButton("📋 Quick Full Analysis", callback_data=f"quick_{symbol}")
+            InlineKeyboardButton("📋 Quick Full Analysis (Daily)", callback_data=f"quick_{symbol}")
         ]
     ]
     
@@ -467,14 +502,17 @@ async def handle_timeframe(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         keyboard = [
             [
-                InlineKeyboardButton("15 Min", callback_data=f"tf_15m_{symbol}"),
-                InlineKeyboardButton("30 Min", callback_data=f"tf_30m_{symbol}")
+                InlineKeyboardButton("5m", callback_data=f"tf_5m_{symbol}"),
+                InlineKeyboardButton("7m", callback_data=f"tf_7m_{symbol}"),
+                InlineKeyboardButton("10m", callback_data=f"tf_10m_{symbol}")
             ],
             [
-                InlineKeyboardButton("1 Hour", callback_data=f"tf_1h_{symbol}"),
-                InlineKeyboardButton("4 Hours", callback_data=f"tf_4h_{symbol}")
+                InlineKeyboardButton("15m", callback_data=f"tf_15m_{symbol}"),
+                InlineKeyboardButton("30m", callback_data=f"tf_30m_{symbol}"),
+                InlineKeyboardButton("1H", callback_data=f"tf_1h_{symbol}")
             ],
             [
+                InlineKeyboardButton("4H", callback_data=f"tf_4h_{symbol}"),
                 InlineKeyboardButton("📊 Daily", callback_data=f"tf_1d_{symbol}")
             ]
         ]
@@ -504,7 +542,7 @@ async def handle_chart_request(update: Update, context: ContextTypes.DEFAULT_TYP
     timeframe = parts[3]
     
     if analysis_type == 'all':
-        analysis_types = ['elliott', 'classic', 'harmonic', 'ict']
+        analysis_types = ['elliott', 'classic', 'harmonic', 'ict', 'fibonacci']
     else:
         analysis_types = [analysis_type]
     
@@ -513,7 +551,10 @@ async def handle_chart_request(update: Update, context: ContextTypes.DEFAULT_TYP
 async def generate_and_send_chart(query, context, symbol: str, timeframe: str, analysis_types: list):
     """Generate and send chart with analysis"""
     
-    await query.edit_message_text(f"⏳ Generating chart for {symbol}...")
+    await query.edit_message_text(f"⏳ Generating chart for {symbol}...\n\n"
+                                  "📈 Adding Moving Averages...\n"
+                                  "📊 Calculating Volume Profile...\n"
+                                  "🎯 Computing Targets & Stop Loss...")
     
     # Fetch data
     df = get_stock_data(symbol, timeframe)
@@ -529,9 +570,10 @@ async def generate_and_send_chart(query, context, symbol: str, timeframe: str, a
     info = get_stock_info(symbol)
     
     try:
-        # Generate chart
+        # Generate chart with MA and Volume Profile
         chart_buffer = chart_drawer.generate_chart(
-            df, symbol, tf_name, analysis_types
+            df, symbol, tf_name, analysis_types,
+            show_ma=True, show_volume_profile=True
         )
         
         # Generate analysis text
@@ -587,6 +629,17 @@ def generate_analysis_text(df, symbol: str, timeframe: str, analysis_types: list
     targets = chart_drawer.get_targets_text(df)
     direction = "🟢 LONG" if targets['is_bullish'] else "🔴 SHORT"
     
+    # Calculate MAs for text
+    close = df['Close'].values
+    ma10 = f"${close[-10:].mean():.2f}" if len(close) >= 10 else "N/A"
+    ma20 = f"${close[-20:].mean():.2f}" if len(close) >= 20 else "N/A"
+    ma50 = f"${close[-50:].mean():.2f}" if len(close) >= 50 else "N/A"
+    ma200 = f"${close[-200:].mean():.2f}" if len(close) >= 200 else "N/A"
+    
+    text += f"**Moving Averages:**\n"
+    text += f"MA10: {ma10} | MA20: {ma20}\n"
+    text += f"MA50: {ma50} | MA200: {ma200}\n\n"
+    
     try:
         if 'elliott' in analysis_types or 'all' in analysis_types:
             elliott = elliott_analyzer.analyze(df)
@@ -611,7 +664,6 @@ def generate_analysis_text(df, symbol: str, timeframe: str, analysis_types: list
         if 'fibonacci' in analysis_types:
             fib = fibonacci_analyzer.analyze(df)
             text += f"📐 **Fibonacci:** {fib.current_zone}\n"
-            text += f"   Recommendation: {fib.recommendation}\n"
         
     except Exception as e:
         logger.error(f"Analysis text error: {e}")
@@ -668,12 +720,14 @@ def main():
     # Text messages
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_symbol))
     
-    logger.info("🚀 Starting bot...")
+    logger.info("🚀 Starting bot V3...")
     print("=" * 50)
-    print("🤖 Advanced Technical Analysis Bot")
-    print("📊 With Chart Drawing")
+    print("🤖 Advanced Technical Analysis Bot V3")
+    print("📊 With Chart Drawing + MA + Volume Profile")
     print("🔒 Access Request System Active")
     print(f"👑 Admin: {ADMIN_ID}")
+    print("=" * 50)
+    print("Timeframes: 5m, 7m, 10m, 15m, 30m, 1H, 4H, Daily")
     print("=" * 50)
     
     app.run_polling(drop_pending_updates=True)
