@@ -1,3 +1,5 @@
+
+bot.py
 """
 Advanced Technical Analysis Telegram Bot V3
 Elliott Waves - Classic Analysis - Harmonic Patterns - ICT - Fibonacci
